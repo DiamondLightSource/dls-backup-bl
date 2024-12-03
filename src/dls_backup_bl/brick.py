@@ -159,7 +159,7 @@ class Brick:
                             if newL[0] == "M" or "m":
                                 axisNo = int(int(newL[0][1:]) / 100)
                                 newL[1] = int(newL[1]) * (1 / positionSFList[axisNo])
-                                newL[1] = f"{int(newL[1])}/{1/positionSFList[axisNo]}"
+                                newL[1] = f"{int(newL[1])}/{1 / positionSFList[axisNo]}"
                                 lines[i] = f"{newL[0]} = {newL[1]}\n"
 
                     pmc = [
@@ -189,8 +189,7 @@ class Brick:
             break
         else:
             msg = (
-                f"ERROR: {self.desc} all {self.defaults.retries} "
-                f"backup attempts failed"
+                f"ERROR: {self.desc} all {self.defaults.retries} backup attempts failed"
             )
             log.critical(msg)
 
@@ -230,8 +229,7 @@ class Brick:
             break
         else:
             msg = (
-                f"ERROR: {self.desc} all {self.defaults.retries} "
-                f"backup attempts failed"
+                f"ERROR: {self.desc} all {self.defaults.retries} backup attempts failed"
             )
             log.critical(msg)
 
@@ -248,9 +246,7 @@ class Brick:
             with pmc_file.open("r") as f:
                 pmc = f.read()
         except (FileNotFoundError, LookupError):
-            log.error(
-                f"could not read i08 for {brick} " f"assuming i08 == 32 for all axes"
-            )
+            log.error(f"could not read i08 for {brick} assuming i08 == 32 for all axes")
             pmc = ""
 
         for axis in range(1, 33):
