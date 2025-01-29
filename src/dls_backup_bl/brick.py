@@ -150,7 +150,7 @@ class Brick:
 
                     # Mx62 in some cases cannot be written directly to the controller as the maximum
                     # acceptable value appears to be 2^35. Here the value of Mx62 is calculated as a factor
-                    # of 1/(ix08*23) is written to the pmac as an expression
+                    # of 1/(ix08*32) is written to the pmac as an expression
                     for i, line in enumerate(lines):
                         newL = line.split("=")
                         newL = [a.strip() for a in newL]
@@ -158,8 +158,14 @@ class Brick:
                             # Determine axis number M variable is related to
                             if newL[0] == "M" or "m":
                                 axisNo = int(int(newL[0][1:]) / 100)
+                                scaling_factor = f"{1/positionSFList[axisNo]}"
+                                # The controller can't parse values in scientific notation (eg 3.69e-05)
+                                # These need replacing with their decimal form equivalent
+                                if "e-" in scaling_factor:
+                                   parts = scaling_factor.split("e-")
+                                   scaling_factor = "0." + ('0' * (int(parts[1])-1)) + parts[0].replace('.', "")
                                 newL[1] = int(newL[1]) * (1 / positionSFList[axisNo])
-                                newL[1] = f"{int(newL[1])}/{1/positionSFList[axisNo]}"
+                                newL[1] = f"{int(newL[1])}/{scaling_factor}"
                                 lines[i] = f"{newL[0]} = {newL[1]}\n"
 
                     pmc = [
