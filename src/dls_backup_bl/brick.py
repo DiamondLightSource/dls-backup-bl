@@ -158,12 +158,16 @@ class Brick:
                             # Determine axis number M variable is related to
                             if newL[0] == "M" or "m":
                                 axisNo = int(int(newL[0][1:]) / 100)
-                                scaling_factor = f"{1/positionSFList[axisNo]}"
+                                scaling_factor = f"{1 / positionSFList[axisNo]}"
                                 # The controller can't parse values in scientific notation (eg 3.69e-05)
                                 # These need replacing with their decimal form equivalent
                                 if "e-" in scaling_factor:
-                                   parts = scaling_factor.split("e-")
-                                   scaling_factor = "0." + ('0' * (int(parts[1])-1)) + parts[0].replace('.', "")
+                                    parts = scaling_factor.split("e-")
+                                    scaling_factor = (
+                                        "0."
+                                        + ("0" * (int(parts[1]) - 1))
+                                        + parts[0].replace(".", "")
+                                    )
                                 newL[1] = int(newL[1]) * (1 / positionSFList[axisNo])
                                 newL[1] = f"{int(newL[1])}/{scaling_factor}"
                                 lines[i] = f"{newL[0]} = {newL[1]}\n"
@@ -195,8 +199,7 @@ class Brick:
             break
         else:
             msg = (
-                f"ERROR: {self.desc} all {self.defaults.retries} "
-                f"backup attempts failed"
+                f"ERROR: {self.desc} all {self.defaults.retries} backup attempts failed"
             )
             log.critical(msg)
 
@@ -236,8 +239,7 @@ class Brick:
             break
         else:
             msg = (
-                f"ERROR: {self.desc} all {self.defaults.retries} "
-                f"backup attempts failed"
+                f"ERROR: {self.desc} all {self.defaults.retries} backup attempts failed"
             )
             log.critical(msg)
 
@@ -254,9 +256,7 @@ class Brick:
             with pmc_file.open("r") as f:
                 pmc = f.read()
         except (FileNotFoundError, LookupError):
-            log.error(
-                f"could not read i08 for {brick} " f"assuming i08 == 32 for all axes"
-            )
+            log.error(f"could not read i08 for {brick} assuming i08 == 32 for all axes")
             pmc = ""
 
         for axis in range(1, 33):

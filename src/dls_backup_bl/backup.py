@@ -162,7 +162,7 @@ class BackupBeamline:
             action="store",
             type=int,
             default=4,
-            help="Number of times to attempt backup. " "Defaults to 4",
+            help="Number of times to attempt backup. Defaults to 4",
         )
         parser.add_argument(
             "-t",
@@ -206,7 +206,7 @@ class BackupBeamline:
         parser.add_argument(
             "--folder",
             action="store_true",
-            help="report the motion backup folder that the " "tool will use.",
+            help="report the motion backup folder that the tool will use.",
         )
 
         # Parse the command line arguments
@@ -336,7 +336,7 @@ class BackupBeamline:
         # finish up
         self.sort_log()
         if total == 0:
-            log.critical("Nothing was backed up " "(incorrect --devices argument?)")
+            log.critical("Nothing was backed up (incorrect --devices argument?)")
 
         if not self.args.positions:
             commit_changes(self.defaults, do_positions=False)
@@ -352,8 +352,7 @@ class BackupBeamline:
         if self.args.positions:
             print("The following command reviews the position files")
             print(
-                f"more {self.defaults.motion_folder}/*"
-                f"{self.defaults.positions_suffix}"
+                f"more {self.defaults.motion_folder}/*{self.defaults.positions_suffix}"
             )
 
     def cancel(self, sig, frame):

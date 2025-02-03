@@ -54,7 +54,7 @@ def compare_changes(defaults: Defaults, pmacs):
                 file_out += f"\n{name}\n{patch}"
 
         if len(diff) == 0:
-            output += "\nThere are no changes to positions since the last " "commit"
+            output += "\nThere are no changes to positions since the last commit"
         filepath = defaults.motion_folder / defaults.positions_file
         with filepath.open("w") as f:
             f.write(f"{output}\n{file_out}")
