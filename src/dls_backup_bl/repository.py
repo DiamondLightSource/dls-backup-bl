@@ -89,7 +89,11 @@ def commit_changes(defaults: Defaults, do_positions=False):
 
         # Gather up any changes
         untracked_files = git_repo.untracked_files
-        modified_files = [diff.a_blob.path for diff in git_repo.index.diff(None)]
+        modified_files = [
+            diff.a_path
+            for diff in git_repo.index.diff(None)
+            if diff.change_type == "M" and diff.a_path is not None
+        ]
 
         ignores = [defaults.log_file.name]
         if not do_positions:
