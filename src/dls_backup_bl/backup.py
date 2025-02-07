@@ -7,6 +7,7 @@ from logging import getLogger
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
+from . import __version__
 from .brick import Brick
 from .config import BackupsConfig
 from .defaults import Defaults
@@ -121,6 +122,12 @@ class BackupBeamline:
             "provide NO arguments except --email (see below for "
             "defaults).",
             usage="%(prog)s [options]",
+        )
+        parser.add_argument(
+            "-v",
+            "--version",
+            action="version",
+            version=__version__,
         )
         parser.add_argument(
             "-i",
