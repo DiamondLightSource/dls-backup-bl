@@ -154,7 +154,7 @@ class BackupBeamline:
             "--dir",
             action="store",
             help="Directory to save backups to. Defaults to"
-            "/dls_sw/motion/Backups/BLXXY",
+            "/dls_sw/work/motion/Backups/BLXXY",
         )
         parser.add_argument(
             "-j",
@@ -310,7 +310,7 @@ class BackupBeamline:
     def check_restore(self):
         print(
             "\nAre you sure? This will restore the most recent commit "
-            "and\noverwrite the motor positions on all pmacs (Y/N)"
+            "and\noverwrite the motor positions on all specified pmacs (Y/N)"
         )
         reply = input()
         if reply[0].lower() != "y":
