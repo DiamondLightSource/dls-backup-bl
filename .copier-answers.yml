@@ -1,8 +1,8 @@
 # Changes here will be overwritten by Copier
-_commit: 2.5.0
+_commit: 3.0.0
 _src_path: gh:DiamondLightSource/python-copier-template
-author_email: giles.knap@diamond.ac.uk
-author_name: Giles Knap
+author_email: James.OHea@diamond.ac.uk
+author_name: James OHea
 component_lifecycle: production
 component_owner: group:default/sscc
 component_type: user-interface
