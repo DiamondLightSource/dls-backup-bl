@@ -47,7 +47,7 @@ dev = [
 ]
 
 [project.scripts]
-dls-backup-bl2 = "dls_backup_bl.backup:main"
+dls-backup-bl = "dls_backup_bl.backup:main"
 
 [project.urls]
 GitHub = "https://github.com/DiamondLightSource/dls-backup-bl"
