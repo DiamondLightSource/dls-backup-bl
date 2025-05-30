@@ -32,7 +32,7 @@ def set_home():
 
 
 # noinspection PyBroadException
-def compare_changes(defaults: Defaults, pmacs):
+def compare_changes(defaults: Defaults, pmacs) -> None:
     try:
         set_home()
         git_repo = Repo(defaults.backup_folder)
@@ -43,18 +43,25 @@ def compare_changes(defaults: Defaults, pmacs):
         output = "\n --------- Motor Position Changes ----------"
         file_out = "\n --------- Mxx62 differences ----------"
         for d in diff:
-            name = f"{d.a_blob.path}"
-            name = Path(name).name
-            name = name.replace(defaults.positions_suffix, "")
-            if not pmacs or name in pmacs:
-                patch = d.diff.decode("utf8")
-                count_diffs = Brick.diff_to_counts(name, patch, defaults)
-                if count_diffs != "":
-                    output += f"\n{name}\n{count_diffs}"
-                file_out += f"\n{name}\n{patch}"
+            if d.a_blob is not None:
+                name = f"{d.a_blob.path}"
+                name = Path(name).name
+                name = name.replace(defaults.positions_suffix, "")
+                if not pmacs or name in pmacs:
+                    if d.diff is not None:
+                        # d.diff can be either a string or bytes, depending on the context
+                        # If already a string, it will remain unchanged
+                        # If it's bytes, it will be decoded to a string
+                        patch = d.diff
+                        if isinstance(patch, bytes):
+                            patch = patch.decode("utf8")
+                        count_diffs = Brick.diff_to_counts(name, patch, defaults)
+                        if count_diffs != "":
+                            output += f"\n{name}\n{count_diffs}"
+                        file_out += f"\n{name}\n{patch}"
 
         if len(diff) == 0:
-            output += "\nThere are no changes to positions since the last " "commit"
+            output += "\nThere are no changes to positions since the last commit"
         filepath = defaults.motion_folder / defaults.positions_file
         with filepath.open("w") as f:
             f.write(f"{output}\n{file_out}")
@@ -89,7 +96,11 @@ def commit_changes(defaults: Defaults, do_positions=False):
 
         # Gather up any changes
         untracked_files = git_repo.untracked_files
-        modified_files = [diff.a_blob.path for diff in git_repo.index.diff(None)]
+        modified_files = [
+            diff.a_path
+            for diff in git_repo.index.diff(None)
+            if diff.change_type == "M" and diff.a_path is not None
+        ]
 
         ignores = [defaults.log_file.name]
         if not do_positions:

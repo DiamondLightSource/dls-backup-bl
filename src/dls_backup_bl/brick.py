@@ -2,6 +2,7 @@ import math
 import re
 import shutil
 import telnetlib
+from decimal import Decimal
 from logging import getLogger
 
 from dls_pmacanalyse.errors import PmacReadError
@@ -148,9 +149,9 @@ class Brick:
                     # that match restore_commands
                     lines = f.readlines()
 
-                    # Mx62 in some cases cannot be written directly to the controller as the maximum
-                    # acceptable value appears to be 2^35. Here the value of Mx62 is calculated as a factor
-                    # of 1/(ix08*23) is written to the pmac as an expression
+                    # In some cases Mx62 cannot be written directly to the controller as the maximum
+                    # acceptable value appears to be 2^35. Instead the value of Mx62 is calculated as
+                    # a factor of 1/(ix08*32) and written to the pmac as an expression
                     for i, line in enumerate(lines):
                         newL = line.split("=")
                         newL = [a.strip() for a in newL]
@@ -158,8 +159,12 @@ class Brick:
                             # Determine axis number M variable is related to
                             if newL[0] == "M" or "m":
                                 axisNo = int(int(newL[0][1:]) / 100)
+                                scaling_factor = f"{1 / positionSFList[axisNo]}"
+                                # The controller can't parse values in scientific notation (eg 3.69e-05)
+                                # These need replacing with their decimal form equivalent
+                                scaling_factor = Decimal(scaling_factor)
                                 newL[1] = int(newL[1]) * (1 / positionSFList[axisNo])
-                                newL[1] = f"{int(newL[1])}/{1/positionSFList[axisNo]}"
+                                newL[1] = f"{int(newL[1])}/{scaling_factor}"
                                 lines[i] = f"{newL[0]} = {newL[1]}\n"
 
                     pmc = [
@@ -189,8 +194,7 @@ class Brick:
             break
         else:
             msg = (
-                f"ERROR: {self.desc} all {self.defaults.retries} "
-                f"backup attempts failed"
+                f"ERROR: {self.desc} all {self.defaults.retries} backup attempts failed"
             )
             log.critical(msg)
 
@@ -230,8 +234,7 @@ class Brick:
             break
         else:
             msg = (
-                f"ERROR: {self.desc} all {self.defaults.retries} "
-                f"backup attempts failed"
+                f"ERROR: {self.desc} all {self.defaults.retries} backup attempts failed"
             )
             log.critical(msg)
 
@@ -248,9 +251,7 @@ class Brick:
             with pmc_file.open("r") as f:
                 pmc = f.read()
         except (FileNotFoundError, LookupError):
-            log.error(
-                f"could not read i08 for {brick} " f"assuming i08 == 32 for all axes"
-            )
+            log.error(f"could not read i08 for {brick} assuming i08 == 32 for all axes")
             pmc = ""
 
         for axis in range(1, 33):

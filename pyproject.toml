@@ -7,7 +7,6 @@ name = "dls-backup-bl"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
@@ -27,7 +26,7 @@ dependencies = [
 dynamic = ["version"]
 license.file = "LICENSE"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [tool.setuptools.package-data]
 gitConfig = ["src/dls_backup_bl/global_git_config/.gitconfig"]
@@ -47,14 +46,14 @@ dev = [
 ]
 
 [project.scripts]
-dls-backup-bl = "dls_backup_bl.__main__:main"
+dls-backup-bl = "dls_backup_bl.backup:main"
 
 [project.urls]
 GitHub = "https://github.com/DiamondLightSource/dls-backup-bl"
 
 [[project.authors]] # Further authors may be added by duplicating this section
-email = "giles.knap@diamond.ac.uk"
-name = "Giles Knap"
+email = "James.OHea@diamond.ac.uk"
+name = "James OHea"
 
 
 [tool.setuptools_scm]

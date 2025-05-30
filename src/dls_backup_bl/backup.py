@@ -7,6 +7,7 @@ from logging import getLogger
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
+from . import __version__
 from .brick import Brick
 from .config import BackupsConfig
 from .defaults import Defaults
@@ -123,6 +124,12 @@ class BackupBeamline:
             usage="%(prog)s [options]",
         )
         parser.add_argument(
+            "-v",
+            "--version",
+            action="version",
+            version=__version__,
+        )
+        parser.add_argument(
             "-i",
             "--import-cfg",
             action="store",
@@ -147,7 +154,7 @@ class BackupBeamline:
             "--dir",
             action="store",
             help="Directory to save backups to. Defaults to"
-            "/dls_sw/motion/Backups/BLXXY",
+            "/dls_sw/work/motion/Backups/BLXXY",
         )
         parser.add_argument(
             "-j",
@@ -162,7 +169,7 @@ class BackupBeamline:
             action="store",
             type=int,
             default=4,
-            help="Number of times to attempt backup. " "Defaults to 4",
+            help="Number of times to attempt backup. Defaults to 4",
         )
         parser.add_argument(
             "-t",
@@ -206,7 +213,7 @@ class BackupBeamline:
         parser.add_argument(
             "--folder",
             action="store_true",
-            help="report the motion backup folder that the " "tool will use.",
+            help="report the motion backup folder that the tool will use.",
         )
 
         # Parse the command line arguments
@@ -303,7 +310,7 @@ class BackupBeamline:
     def check_restore(self):
         print(
             "\nAre you sure? This will restore the most recent commit "
-            "and\noverwrite the motor positions on all pmacs (Y/N)"
+            "and\noverwrite the motor positions on all specified pmacs (Y/N)"
         )
         reply = input()
         if reply[0].lower() != "y":
@@ -336,7 +343,7 @@ class BackupBeamline:
         # finish up
         self.sort_log()
         if total == 0:
-            log.critical("Nothing was backed up " "(incorrect --devices argument?)")
+            log.critical("Nothing was backed up (incorrect --devices argument?)")
 
         if not self.args.positions:
             commit_changes(self.defaults, do_positions=False)
@@ -352,8 +359,7 @@ class BackupBeamline:
         if self.args.positions:
             print("The following command reviews the position files")
             print(
-                f"more {self.defaults.motion_folder}/*"
-                f"{self.defaults.positions_suffix}"
+                f"more {self.defaults.motion_folder}/*{self.defaults.positions_suffix}"
             )
 
     def cancel(self, sig, frame):
