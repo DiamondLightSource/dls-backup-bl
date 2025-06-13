@@ -21,7 +21,7 @@ dependencies = [
     "pyqt5",
     "pexpect",
     "requests",
-    "urllib3==1.26.20",        # pinning because we use deprecated DEFAULT_CIPHERS
+    "urllib3==2.4.0",        # pinning because we use deprecated DEFAULT_CIPHERS
 ] # Add project dependencies here, e.g. ["click", "numpy"]
 dynamic = ["version"]
 license.file = "LICENSE"
