@@ -11,7 +11,11 @@ from .defaults import Defaults
 
 log = getLogger(__name__)
 
-requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += "HIGH:!DH:!aNULL"  # type: ignore
+try:
+    requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += "HIGH:!DH:!aNULL"  # type: ignore
+except AttributeError:
+    # urllib3 >= 2.0 removed DEFAULT_CIPHERS and uses sensible defaults
+    pass
 try:
     requests.packages.urllib3.contrib.pyopenssl.DEFAULT_SSL_CIPHER_LIST += (  # type: ignore
         "HIGH:!DH:!aNULL"
@@ -19,6 +23,9 @@ try:
 except AttributeError:
     # no pyopenssl support used / needed / available
     pass
+
+# moxa NPort firmware 2.x serves https with a self-signed certificate
+requests.packages.urllib3.disable_warnings()  # type: ignore
 
 
 # todo make ts_type an enum
@@ -61,41 +68,83 @@ class TsConfig:
             raise ValueError("This web page that doesn't look like a moxa login screen")
         fake_challenge = match.groups()[0]
 
-        # do what the function SetPass() javascript does on the login screen
-        md = hashlib.md5(fake_challenge.encode("utf8")).hexdigest()
-        p = ""
-        for c in password:
-            p += f"{ord(c):x}"
-        md5_pass = ""
-        for i in range(len(p)):
-            m = int(p[i], 16)
-            n = int(md[i], 16)
-            md5_pass += "%x" % (m ^ n)
+        if "EncUser" in page:
+            # firmware 2.x - do what SetPass() javascript does on the login
+            # screen: XOR each credential into the SHA256 of the challenge
+            key = hashlib.sha256(fake_challenge.encode("utf8")).digest()
 
-        login_data = {
-            "Username": username,
-            "MD5Password": md5_pass,
-            "Password": "",
-            "FakeChallenge": fake_challenge,
-        }
+            def encode(secret):
+                result = bytearray(key)
+                for i, c in enumerate(secret):
+                    result[i] = key[i] ^ ord(c)
+                return result.hex()
+
+            login_data = {
+                "Username": "",
+                "Password": "",
+                "EncUser": encode(username),
+                "EncPasswd": encode(password),
+                "FakeChallenge": fake_challenge,
+            }
+        else:
+            # firmware 1.x - do what SetPass() javascript does on the login
+            # screen: XOR the password's hex digits into the MD5 of the
+            # challenge
+            md = hashlib.md5(fake_challenge.encode("utf8")).hexdigest()
+            p = ""
+            for c in password:
+                p += f"{ord(c):x}"
+            md5_pass = ""
+            for i in range(len(p)):
+                m = int(p[i], 16)
+                n = int(md[i], 16)
+                md5_pass += "%x" % (m ^ n)
+
+            login_data = {
+                "Username": username,
+                "MD5Password": md5_pass,
+                "Password": "",
+                "FakeChallenge": fake_challenge,
+            }
         return login_data
 
     def get_moxa_config(self, username, password):
         url = f"http://{self.ts}"
         # use requests session to get authentication cookie
         session = requests.session()
-        response = session.post(url)
+        # firmware 2.x redirects to https with a self-signed certificate
+        response = session.post(url, verify=False)
         response.raise_for_status()
+        url = response.url.rstrip("/")
 
         login = self.make_moxa_login(response.text, username, password)
-        # send the md5 hash and username - populates session cookie 'ChallID'
-        session.post(url, data=login, verify=False)
+        # send the encoded credentials - populates session cookie 'ChallID'
+        response = session.post(f"{url}/", data=login, verify=False)
 
+        # firmware 2.x shows a login history page first - press 'Continue'
+        if "WebLogClr" in response.text:
+            session.get(f"{url}/WebLogClr?op=0", verify=False)
+
+        # the export form moved from ConfExp.htm to BackupRestore.htm in
+        # firmware 2.x, which has several forms each with its own csrf_token -
+        # take the one from the form that posts to Config.txt
         response = session.get(f"{url}/ConfExp.htm", verify=False)
-        m = re.search(r"csrf_token value=([^>]*)>", response.text)
+        if response.status_code == 404:
+            response = session.get(f"{url}/BackupRestore.htm", verify=False)
+            m = re.search(
+                r"action=Config\.txt>.*?csrf_token value=([^>]*)>",
+                response.text,
+                re.DOTALL,
+            )
+        else:
+            m = re.search(r"csrf_token value=([^>]*)>", response.text)
         data = {"csrf_token": m[1]} if m else {}
 
         response = session.post(f"{url}/Config.txt", data=data, verify=False)
+        response.raise_for_status()
+        if b"FakeChallenge" in response.content:
+            # we got the login page back instead of the configuration
+            raise ValueError(f"moxa {self.ts} login failed - check credentials")
 
         cfg_path = self.path / (self.ts + "_config.dec")
         with cfg_path.open("wb") as f:

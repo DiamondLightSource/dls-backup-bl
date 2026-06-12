@@ -123,7 +123,8 @@ def commit_changes(defaults: Defaults, do_positions=False):
                 for File in modified_files:
                     log.info("\t" + File)
 
-            git_repo.index.add(change_list)
+            # use the git CLI add since IndexFile.add cannot stage deletions
+            git_repo.git.add(change_list)
             git_repo.index.commit("commit of devices backup by dls-backup-bl")
             log.critical("Committed changes")
         else:
