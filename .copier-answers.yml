@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier
-_commit: 3.1.0
+_commit: 5.1.0
 _src_path: gh:DiamondLightSource/python-copier-template
 author_email: James.OHea@diamond.ac.uk
 author_name: James OHea
@@ -9,10 +9,11 @@ component_type: user-interface
 description: A backup tool for beamlines for pmacs, terminal servers, zebras
 distribution_name: dls-backup-bl
 docker: true
+docker_debug: false
 docs_type: README
 git_platform: github.com
 github_org: DiamondLightSource
 package_name: dls_backup_bl
-pypi: true
+pypi: false
 repo_name: dls-backup-bl
 type_checker: mypy
