@@ -9,15 +9,24 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
 ]
 description = "A backup tool for beamlines for pmacs, terminal servers, zebras"
-dependencies = [] # Add project dependencies here, e.g. ["click", "numpy"]
+dependencies = [
+    "dls-pmacanalyse>=2.1.0",
+    "dls-pmaclib",
+    "cothread",
+    "epicscorelibs", # provides the bundled libca that cothread loads
+    "gitpython",
+    "attrs>=19.1.0",
+    "pexpect",
+    "requests[socks]", # socks extra (PySocks) allows backups via a SOCKS proxy
+    "pyqt5",
+]
 dynamic = ["version"]
 license.file = "LICENSE"
 readme = "README.md"
-requires-python = ">=3.11"
+# telnetlib was removed from the stdlib in 3.13 and is required by dls-pmaclib
+requires-python = ">=3.11,<3.13"
 
 [dependency-groups]
 dev = [

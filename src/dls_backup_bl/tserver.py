@@ -109,7 +109,15 @@ class TsConfig:
         return login_data
 
     def get_moxa_config(self, username, password):
-        url = f"http://{self.ts}"
+        # Allow the "server" field to include a scheme (e.g.
+        # https://host:8026) so an https-only device - such as one reached
+        # through a port forward that only exposes its 443 port - can be
+        # contacted directly. Without a scheme we default to http and rely on
+        # firmware 2.x redirecting us up to https (and firmware 1.x stays http).
+        if "://" in self.ts:
+            url = self.ts.rstrip("/")
+        else:
+            url = f"http://{self.ts}"
         # use requests session to get authentication cookie
         session = requests.session()
         # firmware 2.x redirects to https with a self-signed certificate
@@ -146,7 +154,9 @@ class TsConfig:
             # we got the login page back instead of the configuration
             raise ValueError(f"moxa {self.ts} login failed - check credentials")
 
-        cfg_path = self.path / (self.ts + "_config.dec")
+        # drop any scheme so it doesn't put slashes in the filename
+        name = self.ts.split("://", 1)[-1]
+        cfg_path = self.path / (name + "_config.dec")
         with cfg_path.open("wb") as f:
             f.write(response.content)
         return True
@@ -166,7 +176,10 @@ class TsConfig:
         try:
             os.chmod(str(tar), 0o664)
         except Exception:
-            msg = "Warning: Permissions for ACS Terminal server backup file could not be changed."
+            msg = (
+                "Warning: Permissions for ACS Terminal server backup file "
+                "could not be changed."
+            )
             log.critical(msg)
             pass
         if i == 1:
@@ -189,7 +202,10 @@ def backup_terminal_server(server: str, ts_type: str, defaults: Defaults):
             else:
                 log.critical(f"ERROR failed to back up {desc}")
         except Exception:
-            msg = f"ERROR: {desc} backup failed on attempt {attempt_num + 1} of {defaults.retries}"
+            msg = (
+                f"ERROR: {desc} backup failed on attempt "
+                f"{attempt_num + 1} of {defaults.retries}"
+            )
             log.debug(msg, exc_info=True)
             log.error(msg)
             continue
