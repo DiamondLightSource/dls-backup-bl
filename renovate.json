@@ -28,7 +28,8 @@
         "docker/setup-buildx-action",
         "docker/login-action",
         "docker/build-push-action",
-        "docker/metadata-action"
+        "docker/metadata-action",
+        "pypa/gh-action-pypi-publish"
       ],
       "matchManagers": [
         "github-actions"

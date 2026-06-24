@@ -14,6 +14,6 @@ docs_type: README
 git_platform: github.com
 github_org: DiamondLightSource
 package_name: dls_backup_bl
-pypi: false
+pypi: true
 repo_name: dls-backup-bl
 type_checker: mypy
