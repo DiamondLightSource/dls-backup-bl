@@ -49,7 +49,8 @@ def compare_changes(defaults: Defaults, pmacs) -> None:
                 name = name.replace(defaults.positions_suffix, "")
                 if not pmacs or name in pmacs:
                     if d.diff is not None:
-                        # d.diff can be either a string or bytes, depending on the context
+                        # d.diff can be either a string or bytes, depending on
+                        # the context
                         # If already a string, it will remain unchanged
                         # If it's bytes, it will be decoded to a string
                         patch = d.diff
