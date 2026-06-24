@@ -1,0 +1,12 @@
+# This is a hardware-facing repo where much of the code talks to live devices
+# over the network, so automated test coverage is limited by design. Keep the
+# Codecov status checks informational so they report coverage without failing
+# pull requests.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
