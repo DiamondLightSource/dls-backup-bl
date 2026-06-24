@@ -27,10 +27,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # The runtime stage copies the built venv into a runtime container
 FROM ubuntu:noble AS runtime
 
-# Add apt-get system dependecies for runtime here if needed
-# RUN apt-get update -y && apt-get install -y --no-install-recommends \
-#     some-library \
-#     && apt-get dist-clean
+# GitPython (used by repository.py) needs the git executable at runtime
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
+    git \
+    && apt-get dist-clean
 
 # Copy the python installation from the build stage
 COPY --from=build /python /python
