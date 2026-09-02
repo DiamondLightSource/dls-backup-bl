@@ -2,15 +2,16 @@ import argparse
 import logging
 import signal
 import smtplib
+import sys
 from enum import Enum
 from logging import getLogger
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
-from . import __version__
+from . import __version__, nport
 from .brick import Brick
 from .config import BackupsConfig
-from .defaults import Defaults
+from .defaults import Defaults, TsConfigFormat
 from .importjson import import_json
 from .repository import commit_changes, compare_changes, restore_positions
 from .tserver import backup_terminal_server
@@ -215,6 +216,42 @@ class BackupBeamline:
             action="store_true",
             help="report the motion backup folder that the tool will use.",
         )
+        # Moxa terminal servers export their configuration encrypted. These
+        # control whether a readable copy is saved alongside, or instead of, it.
+        decrypt_group = parser.add_mutually_exclusive_group()
+        decrypt_group.add_argument(
+            "--decrypt",
+            action="store_true",
+            help="also write a decrypted, readable .ini beside each Moxa "
+            "terminal server's encrypted .dec backup",
+        )
+        decrypt_group.add_argument(
+            "--decrypt-only",
+            action="store_true",
+            help="write only the decrypted .ini for Moxa terminal servers, "
+            "not the encrypted .dec",
+        )
+        parser.add_argument(
+            "--decode",
+            action="store",
+            metavar="FILE",
+            help="decrypt an already saved terminal server config file and "
+            "exit, without running a backup. Writes FILE with an .ini "
+            "suffix unless --out says otherwise.",
+        )
+        parser.add_argument(
+            "--out",
+            action="store",
+            metavar="FILE",
+            help="where --decode writes its result. Use '-' for stdout.",
+        )
+        parser.add_argument(
+            "--psk",
+            action="store",
+            default=nport.DEFAULT_PSK,
+            help="Moxa configuration pre-shared key to decrypt with. Defaults "
+            f"to the factory setting '{nport.DEFAULT_PSK}'.",
+        )
 
         # Parse the command line arguments
         self.args = parser.parse_args()
@@ -367,12 +404,44 @@ class BackupBeamline:
         self.send_email()
         exit(1)
 
+    def do_decode(self):
+        """Decrypt one saved terminal server configuration file and exit.
+
+        This is a plain file conversion, so it deliberately needs no beamline,
+        no backup area and no network.
+        """
+        source = Path(self.args.decode)
+        try:
+            if self.args.out == "-":
+                sys.stdout.buffer.write(
+                    nport.decrypt(source.read_bytes(), self.args.psk)
+                )
+            else:
+                dest = Path(self.args.out) if self.args.out else None
+                print(nport.decrypt_file(source, dest, self.args.psk))
+        except (OSError, nport.NPortConfigError) as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            exit(1)
+
     def main(self):
         self.parse_args()
         self.email = self.args.email
 
+        # --decode just converts a file, so handle it before anything that
+        # insists on a beamline or a backup folder
+        if self.args.decode:
+            self.do_decode()
+            return
+
         # catch CTRL-C
         signal.signal(signal.SIGINT, self.cancel)
+
+        if self.args.decrypt_only:
+            ts_config_format = TsConfigFormat.decrypted
+        elif self.args.decrypt:
+            ts_config_format = TsConfigFormat.both
+        else:
+            ts_config_format = TsConfigFormat.encrypted
 
         self.defaults = Defaults(
             self.args.beamline,
@@ -380,6 +449,8 @@ class BackupBeamline:
             self.args.json_file,
             self.args.retries,
             domain=self.args.domain,
+            ts_config_format=ts_config_format,
+            ts_psk=self.args.psk,
         )
 
         if self.args.folder:

@@ -7,7 +7,8 @@ from pathlib import Path
 import pexpect
 import requests
 
-from .defaults import Defaults
+from . import nport
+from .defaults import Defaults, TsConfigFormat
 
 log = getLogger(__name__)
 
@@ -38,9 +39,13 @@ class TsConfig:
         username: str | None = None,
         password: str | None = None,
         ts_type: str = "",
+        config_format: TsConfigFormat = TsConfigFormat.encrypted,
+        psk: str = nport.DEFAULT_PSK,
     ):
         self.ts = ts
         self.path: Path = backup_directory
+        self.config_format = config_format
+        self.psk = psk
         self.desc = f"Terminal server {ts} type {ts_type}"
 
         log.info(f"backing up {self.desc}")
@@ -154,12 +159,30 @@ class TsConfig:
             # we got the login page back instead of the configuration
             raise ValueError(f"moxa {self.ts} login failed - check credentials")
 
+        self.save_moxa_config(response.content)
+        return True
+
+    def save_moxa_config(self, content: bytes) -> None:
+        """Write the fetched configuration in the requested format(s).
+
+        The encrypted export is only dropped once we have a readable copy to
+        replace it, so a wrong pre-shared key can never lose a backup.
+        """
         # drop any scheme so it doesn't put slashes in the filename
         name = self.ts.split("://", 1)[-1]
-        cfg_path = self.path / (name + "_config.dec")
-        with cfg_path.open("wb") as f:
-            f.write(response.content)
-        return True
+
+        plain: bytes | None = None
+        if self.config_format is not TsConfigFormat.encrypted:
+            try:
+                plain = nport.decrypt(content, self.psk)
+            except nport.NPortConfigError as e:
+                log.error(f"cannot decrypt the configuration from {self.ts}: {e}")
+                log.debug("decryption failed", exc_info=True)
+
+        if plain is None or self.config_format is not TsConfigFormat.decrypted:
+            (self.path / f"{name}_config.dec").write_bytes(content)
+        if plain is not None:
+            (self.path / f"{name}_config.ini").write_bytes(plain)
 
     def get_acs_config(self, username, password, remote_path):
         tar = self.path / (self.ts + "_config.tar.gz")
@@ -196,7 +219,15 @@ def backup_terminal_server(server: str, ts_type: str, defaults: Defaults):
     for attempt_num in range(defaults.retries):
         # noinspection PyBroadException
         try:
-            t = TsConfig(server, defaults.ts_folder, None, None, ts_type)
+            t = TsConfig(
+                server,
+                defaults.ts_folder,
+                None,
+                None,
+                ts_type,
+                defaults.ts_config_format,
+                defaults.ts_psk,
+            )
             if t.success:
                 log.critical(f"SUCCESS backed up {desc}")
             else:
