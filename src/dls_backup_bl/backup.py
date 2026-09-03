@@ -232,7 +232,7 @@ class BackupBeamline:
             "not the encrypted .dec",
         )
         parser.add_argument(
-            "--decode",
+            "--decrypt-file",
             action="store",
             metavar="FILE",
             help="decrypt an already saved terminal server config file and "
@@ -243,7 +243,7 @@ class BackupBeamline:
             "--out",
             action="store",
             metavar="FILE",
-            help="where --decode writes its result. Use '-' for stdout.",
+            help="where --decrypt-file writes its result. Use '-' for stdout.",
         )
         parser.add_argument(
             "--psk",
@@ -256,10 +256,10 @@ class BackupBeamline:
         # Parse the command line arguments
         self.args = parser.parse_args()
 
-        # --out is meaningless on its own: without --decode nothing would be
+        # --out is meaningless on its own: without --decrypt-file nothing would be
         # written there and the backup would run as if it had not been asked for
-        if self.args.out and not self.args.decode:
-            parser.error("--out is only used with --decode")
+        if self.args.out and not self.args.decrypt_file:
+            parser.error("--out is only used with --decrypt-file")
 
     def do_geobricks(self, pmacs: list[str] | None = None):
         count = 0
@@ -417,13 +417,13 @@ class BackupBeamline:
         self.send_email()
         exit(1)
 
-    def do_decode(self):
+    def do_decrypt_file(self):
         """Decrypt one saved terminal server configuration file and exit.
 
         This is a plain file conversion, so it deliberately needs no beamline,
         no backup area and no network.
         """
-        source = Path(self.args.decode)
+        source = Path(self.args.decrypt_file)
         try:
             if self.args.out == "-":
                 sys.stdout.buffer.write(
@@ -440,10 +440,10 @@ class BackupBeamline:
         self.parse_args()
         self.email = self.args.email
 
-        # --decode just converts a file, so handle it before anything that
+        # --decrypt-file just converts a file, so handle it before anything that
         # insists on a beamline or a backup folder
-        if self.args.decode:
-            self.do_decode()
+        if self.args.decrypt_file:
+            self.do_decrypt_file()
             return
 
         # catch CTRL-C

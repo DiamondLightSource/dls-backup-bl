@@ -30,7 +30,7 @@ As a library::
 
     text = nport.decrypt(Path("172.23.243.10_config.dec").read_bytes())
 
-From the command line, ``dls-backup-bl --decode FILE`` converts one saved
+From the command line, ``dls-backup-bl --decrypt-file FILE`` converts one saved
 backup, and ``--decrypt`` / ``--decrypt-only`` ask a normal backup run to write
 the readable copy as well as, or instead of, the encrypted one.
 """

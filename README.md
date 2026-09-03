@@ -161,19 +161,19 @@ wrong pre-shared key can never cost you the backup.
 Or convert a backup you already have, without running a backup at all:
 
 ```bash
-dls-backup-bl --decode BL16I/TerminalServers/172.23.243.10_config.dec
+dls-backup-bl --decrypt-file BL16I/TerminalServers/172.23.243.10_config.dec
 # writes 172.23.243.10_config.ini
 
-dls-backup-bl --decode 172.23.243.10_config.dec --out -   # to stdout
+dls-backup-bl --decrypt-file 172.23.243.10_config.dec --out -   # to stdout
 ```
 
 which makes the configurations greppable and diffable:
 
 ```bash
-dls-backup-bl --decode a_config.dec --out - | grep -i '^Server Name'
+dls-backup-bl --decrypt-file a_config.dec --out - | grep -i '^Server Name'
 
-diff <(dls-backup-bl --decode a_config.dec --out -) \
-     <(dls-backup-bl --decode b_config.dec --out -)
+diff <(dls-backup-bl --decrypt-file a_config.dec --out -) \
+     <(dls-backup-bl --decrypt-file b_config.dec --out -)
 ```
 
 The `.ini` is the device's own format: it can be edited and uploaded straight
