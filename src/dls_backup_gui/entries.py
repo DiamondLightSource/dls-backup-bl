@@ -7,6 +7,7 @@ from functools import partial
 from logging import getLogger
 
 from PyQt5.QtWidgets import (
+    QCheckBox,
     QDialog,
     QGridLayout,
     QHBoxLayout,
@@ -17,7 +18,22 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 
+from dls_backup_bl.config import to_bool
+
 log = getLogger(__name__)
+
+
+def field_value(widget):
+    """The value in a field, whichever kind of widget is holding it."""
+    return widget.isChecked() if isinstance(widget, QCheckBox) else widget.text()
+
+
+def set_field(widget, value) -> None:
+    """Put a value into a field, coming from the table as displayed text."""
+    if isinstance(widget, QCheckBox):
+        widget.setChecked(to_bool(value))
+    else:
+        widget.setText(value)
 
 
 class EntryPopup(QDialog):
@@ -36,12 +52,18 @@ class EntryPopup(QDialog):
         self.data_type = parent.tab_entry_type[this_tab]
         self.FieldsList = self.data_type.keys()
 
-        self.LineEditList = []
+        field_types = self.data_type.types()
+        self.FieldWidgets = []
 
         for i, Field in enumerate(self.FieldsList):
             self.GridLayout.addWidget(QLabel(str(Field)), i, 0)
-            temp = QLineEdit()
-            self.LineEditList.append(temp)
+            # a bool is a checkbox: a text box would make an optional flag
+            # mandatory, since a blank field disables the save buttons
+            if field_types.get(Field) is bool:
+                temp = QCheckBox()
+            else:
+                temp = QLineEdit()
+            self.FieldWidgets.append(temp)
             self.GridLayout.addWidget(temp, i, 1)
 
         # Create the cancel button and add it to the buttons layout
@@ -59,8 +81,9 @@ class EntryPopup(QDialog):
             self.AddNextButton.setVisible(False)
             self.setWindowTitle("Edit Entry")
             for n in range(0, len(self.FieldsList)):
-                self.LineEditList[n].setText(
-                    self.parent.DeviceList.selectedIndexes()[n].data()
+                set_field(
+                    self.FieldWidgets[n],
+                    self.parent.DeviceList.selectedIndexes()[n].data(),
                 )
         else:
             self.setWindowTitle("Add Entry")
@@ -75,8 +98,11 @@ class EntryPopup(QDialog):
         self.ButtonsLayout.addWidget(self.AddFinishButton)
 
         # these have to be here, as the buttons in the function now exist
-        for LineEdit in self.LineEditList:
-            LineEdit.textChanged.connect(self.ButtonVisibility)
+        for widget in self.FieldWidgets:
+            if isinstance(widget, QCheckBox):
+                widget.stateChanged.connect(self.ButtonVisibility)
+            else:
+                widget.textChanged.connect(self.ButtonVisibility)
 
         # Add both layouts to the final layout
         self.VerLayout.addLayout(self.GridLayout)
@@ -95,8 +121,9 @@ class EntryPopup(QDialog):
         if self.EditMode:
             Present = False
 
-        for LineEdit in self.LineEditList:
-            if len(LineEdit.text()) < 1:
+        for widget in self.FieldWidgets:
+            # a cleared checkbox is a valid answer, not a blank field
+            if not isinstance(widget, QCheckBox) and len(widget.text()) < 1:
                 EmptyLineEdit = True
 
         if Present or EmptyLineEdit:
@@ -122,7 +149,7 @@ class EntryPopup(QDialog):
         )
         self.RowNumber = self.parent.DeviceList.selectionModel().currentIndex().row()
 
-        values = [self.LineEditList[i].text() for i in range(len(self.FieldsList))]
+        values = [field_value(w) for w in self.FieldWidgets]
         try:
             new_data = self.data_type(*values)
         except ValueError as e:
@@ -138,8 +165,8 @@ class EntryPopup(QDialog):
             self.parent.config.save(self.parent.file)
             self.parent.display_entries()
             if NextEntry:
-                for EditBox in self.LineEditList:
-                    EditBox.setText("")
-                self.LineEditList[0].setFocus()
+                for widget in self.FieldWidgets:
+                    set_field(widget, "")
+                self.FieldWidgets[0].setFocus()
             else:
                 self.close()

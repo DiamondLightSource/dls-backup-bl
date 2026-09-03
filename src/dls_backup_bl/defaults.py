@@ -1,7 +1,21 @@
 import shutil
 import tempfile
+from enum import Enum
 from os import environ
 from pathlib import Path
+
+from .nport import DEFAULT_PSK
+
+
+class TsConfigFormat(Enum):
+    """What to write for each Moxa terminal server configuration backup."""
+
+    #: only the encrypted export, as the tool has always done
+    encrypted = "encrypted"
+    #: the encrypted export and a decrypted, readable copy beside it
+    both = "both"
+    #: only the decrypted copy
+    decrypted = "decrypted"
 
 
 class Defaults:
@@ -33,6 +47,8 @@ class Defaults:
         retries: int = 0,
         config_file_only: bool = False,
         domain: str | None = None,
+        ts_config_format: TsConfigFormat | None = None,
+        ts_psk: str = DEFAULT_PSK,
     ):
         """
          Create an object to hold important file paths.
@@ -46,8 +62,14 @@ class Defaults:
                 beamline setting when config_file is supplied. this is for
                 use by the GUI
         :param domain: override the beamline name to give no BLXXY folder name
+        :param ts_config_format: run level override for how Moxa terminal
+               server backups are saved. None leaves it to each device's own
+               'decrypt' setting in the configuration file
+        :param ts_psk: configuration pre-shared key used to decrypt them
         """
         self._retries = retries if int(retries) > 0 else Defaults._retries
+        self.ts_config_format = ts_config_format
+        self.ts_psk = ts_psk
         self.temp_dir: Path = Path(tempfile.mkdtemp())
 
         if config_file_only and config_file is not None:

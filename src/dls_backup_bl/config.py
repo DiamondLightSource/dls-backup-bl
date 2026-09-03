@@ -23,6 +23,11 @@ class JsonAbleDictionaryTuple:
     def keys(cls):
         return cls.__annotations__.keys()
 
+    @classmethod
+    def types(cls):
+        """The declared type of each field, so an editor can choose a widget."""
+        return cls.__annotations__
+
     def items(self):
         return self.__dict__.items()
 
@@ -32,6 +37,18 @@ class MotorController(JsonAbleDictionaryTuple):
     controller: str
     port: int = attr.ib(converter=int)
     server: str
+
+
+def to_bool(value: object) -> bool:
+    """Accept the several ways a flag can arrive from JSON or the editor.
+
+    The GUI gives a real bool, but a hand edited configuration file may well
+    say ``"true"`` or ``"yes"``, and silently reading those as True - which
+    ``bool("false")`` also does - would be worse than useless.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "yes", "y", "1", "on")
+    return bool(value)
 
 
 class TsType(IntEnum):
@@ -44,6 +61,9 @@ class TsType(IntEnum):
 class TerminalServer(JsonAbleDictionaryTuple):
     server: str
     ts_type: TsType
+    #: write this device's backup as a readable .ini instead of an encrypted
+    #: .dec. Moxa only, and overridden by --decrypt / --decrypt-only.
+    decrypt: bool = attr.ib(default=False, converter=to_bool)
 
 
 @attr.s(auto_attribs=True)
@@ -71,9 +91,12 @@ class BackupsConfig(JsonAbleDictionaryTuple):
         try:
             with json_file.open() as f:
                 raw_items = json.loads(f.read())
-            m = [MotorController(*i.values()) for i in raw_items["motion_controllers"]]
-            t = [TerminalServer(*i.values()) for i in raw_items["terminal_servers"]]
-            z = [Zebra(*i.values()) for i in raw_items["zebras"]]
+            # by keyword, not position: save() sorts the keys, so field order
+            # in the file does not match declaration order, and an omitted
+            # optional field must fall back to its default
+            m = [MotorController(**i) for i in raw_items["motion_controllers"]]
+            t = [TerminalServer(**i) for i in raw_items["terminal_servers"]]
+            z = [Zebra(**i) for i in raw_items["zebras"]]
         except Exception:
             msg = "JSON file missing or invalid"
             log.debug(msg, exc_info=True)

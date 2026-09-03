@@ -2,15 +2,16 @@ import argparse
 import logging
 import signal
 import smtplib
+import sys
 from enum import Enum
 from logging import getLogger
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
-from . import __version__
+from . import __version__, nport
 from .brick import Brick
 from .config import BackupsConfig
-from .defaults import Defaults
+from .defaults import Defaults, TsConfigFormat
 from .importjson import import_json
 from .repository import commit_changes, compare_changes, restore_positions
 from .tserver import backup_terminal_server
@@ -215,9 +216,50 @@ class BackupBeamline:
             action="store_true",
             help="report the motion backup folder that the tool will use.",
         )
+        # Moxa terminal servers export their configuration encrypted. These
+        # control whether a readable copy is saved alongside, or instead of, it.
+        decrypt_group = parser.add_mutually_exclusive_group()
+        decrypt_group.add_argument(
+            "--decrypt",
+            action="store_true",
+            help="also write a decrypted, readable .ini beside each Moxa "
+            "terminal server's encrypted .dec backup",
+        )
+        decrypt_group.add_argument(
+            "--decrypt-only",
+            action="store_true",
+            help="write only the decrypted .ini for Moxa terminal servers, "
+            "not the encrypted .dec",
+        )
+        parser.add_argument(
+            "--decrypt-file",
+            action="store",
+            metavar="FILE",
+            help="decrypt an already saved terminal server config file and "
+            "exit, without running a backup. Writes FILE with an .ini "
+            "suffix unless --out says otherwise.",
+        )
+        parser.add_argument(
+            "--out",
+            action="store",
+            metavar="FILE",
+            help="where --decrypt-file writes its result. Use '-' for stdout.",
+        )
+        parser.add_argument(
+            "--psk",
+            action="store",
+            default=nport.DEFAULT_PSK,
+            help="Moxa configuration pre-shared key to decrypt with. Defaults "
+            f"to the factory setting '{nport.DEFAULT_PSK}'.",
+        )
 
         # Parse the command line arguments
         self.args = parser.parse_args()
+
+        # --out is meaningless on its own: without --decrypt-file nothing would be
+        # written there and the backup would run as if it had not been asked for
+        if self.args.out and not self.args.decrypt_file:
+            parser.error("--out is only used with --decrypt-file")
 
     def do_geobricks(self, pmacs: list[str] | None = None):
         count = 0
@@ -253,7 +295,12 @@ class BackupBeamline:
         for terminal_server in self.config.terminal_servers:
             # Pull out the server details
             server = terminal_server.server
-            args = (server, terminal_server.ts_type, self.defaults)
+            args = (
+                server,
+                terminal_server.ts_type,
+                self.defaults,
+                terminal_server.decrypt,
+            )
             # allows substring match of any devices entry against this server
             if not servers or any((i in server) for i in servers):
                 count += 1
@@ -352,6 +399,9 @@ class BackupBeamline:
         elif self.args.positions == "compare":
             compare_changes(self.defaults, pmacs=self.args.devices)
 
+        # no-op unless --email was given, and it swallows its own failures
+        self.send_email()
+
         print("\n--------- Summary ----------")
         with self.defaults.critical_log_file.open() as f:
             print(f.read())
@@ -367,12 +417,45 @@ class BackupBeamline:
         self.send_email()
         exit(1)
 
+    def do_decrypt_file(self):
+        """Decrypt one saved terminal server configuration file and exit.
+
+        This is a plain file conversion, so it deliberately needs no beamline,
+        no backup area and no network.
+        """
+        source = Path(self.args.decrypt_file)
+        try:
+            if self.args.out == "-":
+                sys.stdout.buffer.write(
+                    nport.decrypt(source.read_bytes(), self.args.psk)
+                )
+            else:
+                dest = Path(self.args.out) if self.args.out else None
+                print(nport.decrypt_file(source, dest, self.args.psk))
+        except (OSError, nport.NPortConfigError) as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            exit(1)
+
     def main(self):
         self.parse_args()
         self.email = self.args.email
 
+        # --decrypt-file just converts a file, so handle it before anything that
+        # insists on a beamline or a backup folder
+        if self.args.decrypt_file:
+            self.do_decrypt_file()
+            return
+
         # catch CTRL-C
         signal.signal(signal.SIGINT, self.cancel)
+
+        # None means no run level override: each device's own 'decrypt'
+        # setting in the configuration file decides
+        ts_config_format = None
+        if self.args.decrypt_only:
+            ts_config_format = TsConfigFormat.decrypted
+        elif self.args.decrypt:
+            ts_config_format = TsConfigFormat.both
 
         self.defaults = Defaults(
             self.args.beamline,
@@ -380,6 +463,8 @@ class BackupBeamline:
             self.args.json_file,
             self.args.retries,
             domain=self.args.domain,
+            ts_config_format=ts_config_format,
+            ts_psk=self.args.psk,
         )
 
         if self.args.folder:
