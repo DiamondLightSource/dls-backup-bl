@@ -99,7 +99,8 @@ or by hand — it is plain JSON:
     "terminal_servers": [
         {
             "server": "bl16i-nt-tserv-01",
-            "ts_type": "moxa"
+            "ts_type": "moxa",
+            "decrypt": true
         }
     ],
     "zebras": [
@@ -108,7 +109,10 @@ or by hand — it is plain JSON:
 }
 ```
 
-`ts_type` is one of `moxa`, `acs` or `acsold`. A motion controller with
+`ts_type` is one of `moxa`, `acs` or `acsold`. `decrypt` asks for that Moxa's
+backup to be saved as a readable `.ini` instead of an encrypted `.dec`; it
+defaults to `false`, is ignored for ACS servers, and is overridden for the whole
+run by `--decrypt` / `--decrypt-only`. A motion controller with
 `"port": 1025` is contacted directly; any other port means it is reached through
 a terminal server. An existing `dls-pmac-analyse` configuration can be imported
 instead of typing the controllers in:
@@ -143,7 +147,8 @@ An NPort exports its configuration encrypted, so a `.dec` file cannot be read or
 diffed without putting it back on a device. This tool can decrypt them locally,
 with no device and no vendor software.
 
-Ask a backup run to save a readable copy as well as the encrypted export:
+Set `decrypt` on a terminal server in the configuration file to have its backup
+saved as an `.ini` from then on, or ask for it a run at a time:
 
 ```bash
 dls-backup-bl --decrypt        # write both .dec and a readable .ini

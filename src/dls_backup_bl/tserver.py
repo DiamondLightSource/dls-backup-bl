@@ -12,6 +12,23 @@ from .defaults import Defaults, TsConfigFormat
 
 log = getLogger(__name__)
 
+
+def moxa_backup_name(server: str) -> str:
+    """A filesystem safe stem for a Moxa terminal server's backup files.
+
+    Drops any scheme, then replaces the two characters a configured address can
+    still contribute:
+
+    * a colon, from a port forward such as ``https://host:8026``. It is legal
+      on Linux, but GIO reads ``host.example.com:8026_config.ini`` as a URI
+      with scheme ``host.example.com``, so gedit and every other GTK
+      application refuses to open it, and it is illegal on SMB besides.
+    * a slash, from a URL path, which would name a directory that is not there.
+    """
+    name = server.split("://", 1)[-1].strip("/")
+    return name.replace(":", "_").replace("/", "_")
+
+
 try:
     requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += "HIGH:!DH:!aNULL"  # type: ignore
 except AttributeError:
@@ -170,9 +187,7 @@ class TsConfig:
         form we do not write this time is removed, so the backup area can never
         keep a stale copy from an earlier run beside a freshly fetched one.
         """
-        # drop any scheme, and any trailing slash, so the server address cannot
-        # put path separators in the filename
-        name = self.ts.split("://", 1)[-1].strip("/")
+        name = moxa_backup_name(self.ts)
 
         plain: bytes | None = None
         if self.config_format is not TsConfigFormat.encrypted:
@@ -233,8 +248,16 @@ class TsConfig:
             return True
 
 
-def backup_terminal_server(server: str, ts_type: str, defaults: Defaults):
+def backup_terminal_server(
+    server: str, ts_type: str, defaults: Defaults, decrypt: bool = False
+):
     desc = f"terminal server {server} type {ts_type}"
+
+    # --decrypt / --decrypt-only apply to the whole run and win; otherwise this
+    # device's own 'decrypt' field decides
+    config_format = defaults.ts_config_format or (
+        TsConfigFormat.decrypted if decrypt else TsConfigFormat.encrypted
+    )
 
     # If backup fails retry specified number of times before giving up
     for attempt_num in range(defaults.retries):
@@ -244,7 +267,7 @@ def backup_terminal_server(server: str, ts_type: str, defaults: Defaults):
                 server,
                 defaults.ts_folder,
                 ts_type=ts_type,
-                config_format=defaults.ts_config_format,
+                config_format=config_format,
                 psk=defaults.ts_psk,
             )
             if t.success:

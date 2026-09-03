@@ -47,7 +47,7 @@ class Defaults:
         retries: int = 0,
         config_file_only: bool = False,
         domain: str | None = None,
-        ts_config_format: TsConfigFormat = TsConfigFormat.encrypted,
+        ts_config_format: TsConfigFormat | None = None,
         ts_psk: str = DEFAULT_PSK,
     ):
         """
@@ -62,8 +62,9 @@ class Defaults:
                 beamline setting when config_file is supplied. this is for
                 use by the GUI
         :param domain: override the beamline name to give no BLXXY folder name
-        :param ts_config_format: whether Moxa terminal server backups are saved
-               encrypted, decrypted, or both
+        :param ts_config_format: run level override for how Moxa terminal
+               server backups are saved. None leaves it to each device's own
+               'decrypt' setting in the configuration file
         :param ts_psk: configuration pre-shared key used to decrypt them
         """
         self._retries = retries if int(retries) > 0 else Defaults._retries

@@ -295,7 +295,12 @@ class BackupBeamline:
         for terminal_server in self.config.terminal_servers:
             # Pull out the server details
             server = terminal_server.server
-            args = (server, terminal_server.ts_type, self.defaults)
+            args = (
+                server,
+                terminal_server.ts_type,
+                self.defaults,
+                terminal_server.decrypt,
+            )
             # allows substring match of any devices entry against this server
             if not servers or any((i in server) for i in servers):
                 count += 1
@@ -444,12 +449,13 @@ class BackupBeamline:
         # catch CTRL-C
         signal.signal(signal.SIGINT, self.cancel)
 
+        # None means no run level override: each device's own 'decrypt'
+        # setting in the configuration file decides
+        ts_config_format = None
         if self.args.decrypt_only:
             ts_config_format = TsConfigFormat.decrypted
         elif self.args.decrypt:
             ts_config_format = TsConfigFormat.both
-        else:
-            ts_config_format = TsConfigFormat.encrypted
 
         self.defaults = Defaults(
             self.args.beamline,

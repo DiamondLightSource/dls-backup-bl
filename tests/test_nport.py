@@ -16,7 +16,7 @@ import pytest
 
 from dls_backup_bl import nport
 from dls_backup_bl.defaults import TsConfigFormat
-from dls_backup_bl.tserver import TsConfig
+from dls_backup_bl.tserver import TsConfig, moxa_backup_name
 
 DATA = Path(__file__).parent / "data"
 
@@ -297,9 +297,27 @@ def test_a_plain_text_export_needs_no_decryption(
     assert (tmp_path / "nport.example_config.ini").read_bytes() == FIXTURE_PLAIN
 
 
-def test_a_trailing_slash_on_the_address_stays_out_of_the_filename(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("server", "expected"),
+    [
+        ("172.23.243.10", "172.23.243.10"),
+        # a colon would make GIO read the name as a URI, so gedit and friends
+        # cannot open the .ini
+        ("https://nport.example:8026", "nport.example_8026"),
+        ("https://nport.example:8026/", "nport.example_8026"),
+        ("http://nport.example", "nport.example"),
+        ("https://nport.example:8026/sub", "nport.example_8026_sub"),
+    ],
+)
+def test_the_address_cannot_put_awkward_characters_in_the_filename(
+    server: str, expected: str
+):
+    assert moxa_backup_name(server) == expected
+
+
+def test_the_backup_is_written_under_the_safe_name(tmp_path: Path):
     ts = make_ts_config(tmp_path, TsConfigFormat.encrypted)
     ts.ts = "https://nport.example:8026/"
     ts.save_moxa_config(FIXTURE_DEC)
 
-    assert (tmp_path / "nport.example:8026_config.dec").read_bytes() == FIXTURE_DEC
+    assert (tmp_path / "nport.example_8026_config.dec").read_bytes() == FIXTURE_DEC
