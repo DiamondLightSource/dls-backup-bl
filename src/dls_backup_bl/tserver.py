@@ -166,23 +166,44 @@ class TsConfig:
         """Write the fetched configuration in the requested format(s).
 
         The encrypted export is only dropped once we have a readable copy to
-        replace it, so a wrong pre-shared key can never lose a backup.
+        replace it, so a wrong pre-shared key can never lose a backup. Whichever
+        form we do not write this time is removed, so the backup area can never
+        keep a stale copy from an earlier run beside a freshly fetched one.
         """
-        # drop any scheme so it doesn't put slashes in the filename
-        name = self.ts.split("://", 1)[-1]
+        # drop any scheme, and any trailing slash, so the server address cannot
+        # put path separators in the filename
+        name = self.ts.split("://", 1)[-1].strip("/")
 
         plain: bytes | None = None
         if self.config_format is not TsConfigFormat.encrypted:
-            try:
-                plain = nport.decrypt(content, self.psk)
-            except nport.NPortConfigError as e:
-                log.error(f"cannot decrypt the configuration from {self.ts}: {e}")
-                log.debug("decryption failed", exc_info=True)
+            if not nport.is_encrypted_config(content):
+                # firmware older than 2.x exports the configuration in the
+                # clear, so there is nothing to decrypt and nothing wrong
+                log.info(f"{self.ts} exported plain text, no decryption needed")
+                plain = content
+            else:
+                try:
+                    plain = nport.decrypt(content, self.psk)
+                except nport.NPortConfigError as e:
+                    # critical, not error: only CRITICAL reaches the log file
+                    # that is committed with the backup and emailed as report
+                    log.critical(
+                        f"ERROR cannot decrypt the configuration from {self.ts}: {e}"
+                    )
+                    log.debug("decryption failed", exc_info=True)
+
+        encrypted_path = self.path / f"{name}_config.dec"
+        decrypted_path = self.path / f"{name}_config.ini"
 
         if plain is None or self.config_format is not TsConfigFormat.decrypted:
-            (self.path / f"{name}_config.dec").write_bytes(content)
+            encrypted_path.write_bytes(content)
+        else:
+            encrypted_path.unlink(missing_ok=True)
+
         if plain is not None:
-            (self.path / f"{name}_config.ini").write_bytes(plain)
+            decrypted_path.write_bytes(plain)
+        else:
+            decrypted_path.unlink(missing_ok=True)
 
     def get_acs_config(self, username, password, remote_path):
         tar = self.path / (self.ts + "_config.tar.gz")
@@ -222,11 +243,9 @@ def backup_terminal_server(server: str, ts_type: str, defaults: Defaults):
             t = TsConfig(
                 server,
                 defaults.ts_folder,
-                None,
-                None,
-                ts_type,
-                defaults.ts_config_format,
-                defaults.ts_psk,
+                ts_type=ts_type,
+                config_format=defaults.ts_config_format,
+                psk=defaults.ts_psk,
             )
             if t.success:
                 log.critical(f"SUCCESS backed up {desc}")

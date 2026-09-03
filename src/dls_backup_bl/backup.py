@@ -256,6 +256,11 @@ class BackupBeamline:
         # Parse the command line arguments
         self.args = parser.parse_args()
 
+        # --out is meaningless on its own: without --decode nothing would be
+        # written there and the backup would run as if it had not been asked for
+        if self.args.out and not self.args.decode:
+            parser.error("--out is only used with --decode")
+
     def do_geobricks(self, pmacs: list[str] | None = None):
         count = 0
         # Go through every motor controller listed in JSON file
@@ -388,6 +393,9 @@ class BackupBeamline:
             commit_changes(self.defaults, do_positions=True)
         elif self.args.positions == "compare":
             compare_changes(self.defaults, pmacs=self.args.devices)
+
+        # no-op unless --email was given, and it swallows its own failures
+        self.send_email()
 
         print("\n--------- Summary ----------")
         with self.defaults.critical_log_file.open() as f:

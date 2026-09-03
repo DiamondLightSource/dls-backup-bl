@@ -1,17 +1,15 @@
 """Tests for the pure Python Moxa NPort configuration decryptor.
 
-The vectors below were produced by Moxa's own implementation (``CfgAESDecrypt``
+Every vector here was produced by Moxa's own implementation (``CfgAESDecrypt``
 and ``CfgAESEncrypt`` in the mcc_tool plugin ``dsci_mcc.so``), so they are
-independent ground truth rather than this module checking itself.
+independent ground truth rather than this module checking itself, and they are
+committed so that no test in this file needs the vendor library, a device, a
+network or anything else outside the repository.
 
-Three further tests run only where the real estate is reachable - the encrypted
-backups and the reference C tool in ``tools/ts_decrypt``. They skip elsewhere,
-so CI exercises the vectors alone. Override the locations with ``NPORT_CORPUS``,
-``TS_DECRYPT`` and ``MCC_SO`` if yours differ.
+Verification against the real estate lives in ``test_nport_estate.py``, which
+needs data we cannot ship and so does not run in CI.
 """
 
-import os
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -19,6 +17,8 @@ import pytest
 from dls_backup_bl import nport
 from dls_backup_bl.defaults import TsConfigFormat
 from dls_backup_bl.tserver import TsConfig
+
+DATA = Path(__file__).parent / "data"
 
 # --- vendor block cipher vectors: (key, ciphertext, expected plaintext) ------
 BLOCK_VECTORS = [
@@ -42,6 +42,27 @@ BLOCK_VECTORS = [
         "0100000000000000000000000000000000000000000000000000000000000000",
         "5b03924c7d49b742b8f787e7996c4ea9550e531d6c7c2fa815670ab450893bb7",
     ),
+    (
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "8c7a178c44922f0d272b9b9a49819d67a4fb711a7d7b94716fe82c1039a23602",
+    ),
+    # the key this tool actually uses, against a minimal block
+    (
+        "6d6f7861a85cc77525a18747f0a7052b4c8b9e70dab30dcb51d0d3125ac43c97",
+        "0000000000000000000000000000000000000000000000000000000000000001",
+        "8d6cc4b08f468869b4b072f3b14832e273a5978fa489eae790f71743a2c9a57b",
+    ),
+    (
+        "d1990ac88adc43771d313045b34ae927a517c0fe9d0595a400ebcdca1a28d03b",
+        "1ba7747b3088f65899e0c43eb3a4c67125316555819b4822442f398156f5a3ba",
+        "cc8bfca618379337bb33250480f2e5e58959ec037c69fd199621fd4e314fe50f",
+    ),
+    (
+        "4205f9838bf9b2df4383c01f37b1ebad756d2d3642bfd0a3c3f78df40e422b3a",
+        "4cef2aaa646f5769c3f4be04267531c9ef96b7459c689367895f00f3d5e6b1ea",
+        "97a228ea777d98c98d8fc5834e8e3432dcd113695e78eefc2e6f753b833e269c",
+    ),
 ]
 
 # A whole synthetic export, encrypted by the vendor library from known text.
@@ -59,22 +80,24 @@ FIXTURE_PLAIN = (
     b"[Network Setting]\r\nIP Address=192.0.2.10\r\n"
 )
 
-CORPUS = Path(os.environ.get("NPORT_CORPUS", "/workspaces/misc/VA/TerminalServers"))
-C_TOOL = Path(os.environ.get("TS_DECRYPT", "/workspaces/tools/ts_decrypt/ts_decrypt"))
-MCC_SO = Path(
-    os.environ.get(
-        "MCC_SO",
-        "/workspaces/tools/mcc_tool_x64_ver1.6_build_26020217/dsci_mcc.so",
-    )
+# The same export in the older 12 byte header form: magic, version, checksum,
+# and the payload length implied by the file size.  Every real backup here is
+# the 16 byte v2 form, so this is synthesised to keep the v1 branch covered.
+FIXTURE_DEC_V1 = (
+    FIXTURE_DEC[:4] + (1).to_bytes(4, "little") + FIXTURE_DEC[8:12] + FIXTURE_DEC[16:]
 )
 
-
-def corpus_files() -> list[Path]:
-    return sorted(CORPUS.glob("*.dec")) if CORPUS.is_dir() else []
-
-
-needs_corpus = pytest.mark.skipif(
-    not corpus_files(), reason=f"no encrypted backups found in {CORPUS}"
+# An export whose text exactly fills its last block, so there is no NUL padding
+# and decrypt() must return the payload whole rather than trimming it.
+FIXTURE_DEC_UNPADDED = bytes.fromhex(
+    "3630303000000101ad80ee67600000007cf8212b31eeba91ba2522238247cdd8"
+    "4ec4d5469c337362ba13d2654d644a39ef5910b5d14da4c8d4641eeb6f615f1f"
+    "8f4365048e32b24582c50db3d749e1837fceefb3aa11bec10a1c2891b79f063f"
+    "8aee131b80a04bf239f1f1c85e2547db"
+)
+FIXTURE_PLAIN_UNPADDED = (
+    b"\r\n[NPort Configuration File]\r\nCheck Code=cfg1\r\n"
+    b"Model Name=NPort 6650-16\r\nServer Name=EXACT-FIT\r\n"
 )
 
 
@@ -101,6 +124,54 @@ def test_decrypts_a_whole_export():
     assert nport.decrypt(FIXTURE_DEC) == FIXTURE_PLAIN
 
 
+def test_matches_the_vendor_tool_on_a_real_device_export():
+    """The whole pipeline against a genuine export and the vendor's own answer.
+
+    ``nport6650_config.ini`` is what Moxa's mcc_tool wrote from
+    ``nport6650_config.dec``, so the expected bytes here come from the vendor
+    application rather than from this implementation.  See data/README.md.
+    """
+    raw = (DATA / "nport6650_config.dec").read_bytes()
+    assert (len(raw) - 16) // nport.BLOCK_SIZE > 2000, "fixture looks truncated"
+    assert nport.decrypt(raw) == (DATA / "nport6650_config.ini").read_bytes()
+
+
+def test_decrypts_an_export_with_no_padding():
+    """Nothing to trim: the text is a whole number of blocks."""
+    assert len(FIXTURE_PLAIN_UNPADDED) % nport.BLOCK_SIZE == 0
+    assert nport.decrypt(FIXTURE_DEC_UNPADDED) == FIXTURE_PLAIN_UNPADDED
+
+
+def test_decrypts_the_older_12_byte_header_form():
+    """The v1 branch takes its payload length from the file size, not a header."""
+    assert nport.decrypt(FIXTURE_DEC_V1) == FIXTURE_PLAIN
+
+
+def test_rejects_an_unknown_header_version():
+    bad = FIXTURE_DEC[:4] + (99).to_bytes(4, "little") + FIXTURE_DEC[8:]
+    with pytest.raises(nport.NPortConfigError):
+        nport.decrypt(bad)
+
+
+@pytest.mark.parametrize(
+    ("claimed_length", "why"),
+    [
+        (48, "not a whole number of 32 byte blocks"),
+        (len(FIXTURE_DEC) * 2, "longer than the file"),
+    ],
+)
+def test_rejects_an_implausible_payload_length(claimed_length: int, why: str):
+    bad = FIXTURE_DEC[:12] + claimed_length.to_bytes(4, "little") + FIXTURE_DEC[16:]
+    with pytest.raises(nport.NPortConfigError, match="implausible"):
+        nport.decrypt(bad)
+
+
+def test_non_ascii_psk_is_reported_not_raised_raw():
+    """The CLI only catches NPortConfigError, so this must not be a UnicodeError."""
+    with pytest.raises(nport.NPortConfigError):
+        nport.make_key("m\N{DEGREE SIGN}xa")
+
+
 def test_wrong_psk_is_caught_by_the_checksum():
     with pytest.raises(nport.ChecksumError):
         nport.decrypt(FIXTURE_DEC, psk="notmoxa")
@@ -110,6 +181,20 @@ def test_rejects_something_that_is_not_an_export():
     assert not nport.is_encrypted_config(b"[NPort Configuration File]\r\n")
     with pytest.raises(nport.NPortConfigError):
         nport.decrypt(b"not an NPort configuration at all")
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("172.23.243.10_config.dec", "172.23.243.10_config.ini"),
+        # no suffix at all: with_suffix() would read ".10_config" as the suffix
+        ("172.23.243.10_config", "172.23.243.10_config.ini"),
+        ("Config.txt", "Config.ini"),
+        ("CONFIG.DEC", "CONFIG.ini"),
+    ],
+)
+def test_default_ini_path_does_not_eat_dotted_names(source: str, expected: str):
+    assert nport.default_ini_path(Path("/backups") / source).name == expected
 
 
 def test_decrypt_file_writes_an_ini_beside_the_dec(tmp_path: Path):
@@ -166,28 +251,55 @@ def test_undecryptable_backup_is_still_kept(tmp_path: Path):
     assert not (tmp_path / "nport.example_config.ini").exists()
 
 
-@needs_corpus
-def test_every_real_backup_passes_its_checksum():
-    """The vendor's own integrity check over the whole estate."""
-    for dec in corpus_files():
-        plain = nport.decrypt(dec.read_bytes())
-        assert b"[NPort Configuration File]" in plain[:64], dec.name
-
-
-@needs_corpus
-@pytest.mark.skipif(
-    not C_TOOL.is_file() or not MCC_SO.is_file(),
-    reason="reference C tool or Moxa dsci_mcc.so not available",
+@pytest.mark.parametrize(
+    ("config_format", "psk", "kept", "removed"),
+    [
+        (TsConfigFormat.encrypted, nport.DEFAULT_PSK, ".dec", ".ini"),
+        (TsConfigFormat.decrypted, nport.DEFAULT_PSK, ".ini", ".dec"),
+        # a failed decrypt keeps the backup, but must not leave the old .ini
+        # standing as if it were this run's configuration
+        (TsConfigFormat.decrypted, "notmoxa", ".dec", ".ini"),
+    ],
 )
-def test_matches_the_reference_c_tool(tmp_path: Path):
-    """Byte for byte agreement with tools/ts_decrypt, which uses Moxa's cipher."""
-    env = dict(os.environ, MCC_SO=str(MCC_SO))
-    for dec in corpus_files():
-        expected = tmp_path / (dec.stem + ".ini")
-        subprocess.run(
-            [str(C_TOOL), str(dec), str(expected)],
-            check=True,
-            capture_output=True,
-            env=env,
-        )
-        assert nport.decrypt(dec.read_bytes()) == expected.read_bytes(), dec.name
+def test_the_form_we_did_not_write_is_not_left_stale(
+    tmp_path: Path,
+    config_format: TsConfigFormat,
+    psk: str,
+    kept: str,
+    removed: str,
+):
+    """A previous run's copy must not survive beside a freshly fetched one."""
+    for suffix in (".dec", ".ini"):
+        (tmp_path / f"nport.example_config{suffix}").write_bytes(b"from an old run")
+
+    ts = make_ts_config(tmp_path, config_format)
+    ts.psk = psk
+    ts.save_moxa_config(FIXTURE_DEC)
+
+    assert not (tmp_path / f"nport.example_config{removed}").exists()
+    assert (tmp_path / f"nport.example_config{kept}").read_bytes() != b"from an old run"
+
+
+@pytest.mark.parametrize(
+    "config_format", [TsConfigFormat.both, TsConfigFormat.decrypted]
+)
+def test_a_plain_text_export_needs_no_decryption(
+    tmp_path: Path, config_format: TsConfigFormat
+):
+    """Older firmware does not encrypt, and that is not a failure.
+
+    The export is already the readable configuration, so it becomes the .ini
+    directly instead of being reported as an undecryptable backup.
+    """
+    ts = make_ts_config(tmp_path, config_format)
+    ts.save_moxa_config(FIXTURE_PLAIN)
+
+    assert (tmp_path / "nport.example_config.ini").read_bytes() == FIXTURE_PLAIN
+
+
+def test_a_trailing_slash_on_the_address_stays_out_of_the_filename(tmp_path: Path):
+    ts = make_ts_config(tmp_path, TsConfigFormat.encrypted)
+    ts.ts = "https://nport.example:8026/"
+    ts.save_moxa_config(FIXTURE_DEC)
+
+    assert (tmp_path / "nport.example:8026_config.dec").read_bytes() == FIXTURE_DEC

@@ -22,7 +22,17 @@ Devices leave that key at the factory default ``moxa`` unless it is explicitly
 changed on the Export Configuration page.
 
 Verified against Moxa's own implementation (``CfgAESDecrypt`` in the mcc_tool
-plugin ``dsci_mcc.so``) - see ``tests/test_nport.py``.
+plugin ``dsci_mcc.so``): block by block against vendor generated vectors, and
+whole file against a real device export decrypted by ``mcc_tool`` itself - see
+``tests/test_nport.py`` and ``tests/data``.
+
+As a library::
+
+    text = nport.decrypt(Path("172.23.243.10_config.dec").read_bytes())
+
+From the command line, ``dls-backup-bl --decode FILE`` converts one saved
+backup, and ``--decrypt`` / ``--decrypt-only`` ask a normal backup run to write
+the readable copy as well as, or instead of, the encrypted one.
 """
 
 from pathlib import Path
@@ -35,11 +45,27 @@ CFG_ENCRYPT_KEY = bytes.fromhex(
 #: Factory default configuration pre-shared key.
 DEFAULT_PSK = "moxa"
 
-#: Product magics that identify an encrypted configuration export.
+#: Product magics that identify an encrypted configuration export, as listed by
+#: the vendor tooling.  A model whose magic is missing here is refused by
+#: :func:`is_encrypted_config` even though its payload would decrypt fine, so
+#: add to this list if a new one turns up.
 MAGICS = (b"6000", b"5000", b"500A", b"8000", b"NEE1", b"NEE2", b"NEE3")
 
-_VERSION_V1 = 0x00000001  # 12 byte header, payload length implied by file size
+# Opaque vendor tags, not version numbers you can order or compare.  Every
+# backup taken at Diamond so far is v2; the v1 branch comes from the vendor code
+# and has never been checked against a real v1 file.
+_VERSION_V1 = 0x00000001  # 12 byte header, payload runs to the end of the file
 _VERSION_V2 = 0x01010000  # 16 byte header carrying an explicit payload length
+
+# Header layout, all integers little endian:
+#
+#   offset  size  field
+#   0       4     product magic, one of MAGICS
+#   4       4     format version, _VERSION_V1 or _VERSION_V2
+#   8       4     checksum of the decrypted payload, see checksum()
+#   12      4     payload length in bytes - v2 only, v1's header ends at 12
+#
+# Everything after the header is ciphertext, a whole number of blocks.
 
 BLOCK_SIZE = 32  # 256 bit Rijndael block
 
@@ -53,6 +79,15 @@ class ChecksumError(NPortConfigError):
 
     Almost always means the pre-shared key is wrong.
     """
+
+
+# --- Rijndael-256 -----------------------------------------------------------
+#
+# What follows is a transcription of the Rijndael reference implementation and
+# keeps that code's own names (tk, Nb, Nk, rcon).  It is deliberately not
+# idiomatic Python and is not worth reading line by line: the vendor generated
+# vectors in tests/test_nport.py are the specification.  Do not tidy any of it
+# without running them.
 
 
 def _make_sbox() -> list[int]:
@@ -110,7 +145,8 @@ _RCON = bytes.fromhex("01020408102040801b366cd8ab4d9a2f5ebc63c697356ad4b37dfaefc
 _NB = 8  # block size in 32 bit columns
 _NK = 8  # key size in 32 bit columns
 _ROUNDS = 14
-# Rijndael row shift distances for Nb=8, decryption direction.
+# Encrypting, Rijndael shifts row i left by (0, 1, 3, 4) when Nb = 8.
+# Decrypting shifts back, i.e. by _NB minus each of those.
 _DEC_SHIFTS = (0, 7, 5, 4)
 
 # The state is held flat in row major order: state[8 * row + col].  Decryption's
@@ -195,7 +231,13 @@ def _decrypt_block(block: bytes, round_keys: list[list[int]]) -> bytes:
 
 def make_key(psk: str = DEFAULT_PSK) -> bytes:
     """Build the 32 byte cipher key for a configuration pre-shared key."""
-    raw = psk.encode("ascii")
+    try:
+        raw = psk.encode("ascii")
+    except UnicodeEncodeError as e:
+        # do not let this escape as a UnicodeEncodeError: callers catch
+        # NPortConfigError to turn a bad key into a message rather than a
+        # traceback
+        raise NPortConfigError(f"pre-shared key must be ASCII ({e})") from e
     if len(raw) > len(CFG_ENCRYPT_KEY):
         raise NPortConfigError(
             f"pre-shared key is too long ({len(raw)} > {len(CFG_ENCRYPT_KEY)} bytes)"
@@ -204,7 +246,13 @@ def make_key(psk: str = DEFAULT_PSK) -> bytes:
 
 
 def checksum(data: bytes) -> int:
-    """The vendor's integrity check: sum of the plaintext's LE uint32 words."""
+    """The vendor's integrity check: sum of the LE uint32 words, mod 2**32.
+
+    Taken over the *padded* plaintext - the whole decrypted payload, trailing
+    NULs included - so :func:`decrypt` must check it before trimming the text.
+    Bytes past a whole number of words are ignored, which never arises here
+    because the payload is a multiple of :data:`BLOCK_SIZE`.
+    """
     total = sum(
         int.from_bytes(data[i : i + 4], "little") for i in range(0, len(data) & ~3, 4)
     )
@@ -212,7 +260,11 @@ def checksum(data: bytes) -> int:
 
 
 def is_encrypted_config(data: bytes) -> bool:
-    """True if ``data`` starts with an encrypted NPort configuration header."""
+    """True if ``data`` starts with an encrypted NPort configuration header.
+
+    16 bytes rather than the v1 header's 12: even the shortest real export is a
+    header plus at least one 32 byte block.
+    """
     return len(data) >= 16 and data[:4] in MAGICS
 
 
@@ -261,19 +313,41 @@ def decrypt(data: bytes, psk: str = DEFAULT_PSK) -> bytes:
             f"{header_checksum:#010x}) - wrong pre-shared key?"
         )
 
-    # The device pads the final block with NULs; the text ends at the first one.
+    # The device NUL pads the last block out to BLOCK_SIZE - there is no
+    # standard padding scheme here.  The configuration is 7 bit text and never
+    # contains a NUL, so the first one is unambiguously where the padding starts.
     end = plain.find(b"\0")
     if end >= 0:
         plain = plain[:end]
     return plain
 
 
+#: Suffixes an encrypted export arrives with, stripped when naming the ``.ini``.
+_ENCRYPTED_SUFFIXES = (".dec", ".txt")
+
+
+def default_ini_path(source: Path) -> Path:
+    """Where :func:`decrypt_file` writes when given no destination.
+
+    Deliberately not ``Path.with_suffix``: backups are named after the device,
+    so ``172.23.243.10_config`` has ``.10_config`` taken as its suffix and would
+    come back as ``172.23.243.ini`` - a silently wrong path that could land on
+    another device's file.
+    """
+    name = source.name
+    for suffix in _ENCRYPTED_SUFFIXES:
+        if name.lower().endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    return source.with_name(name + ".ini")
+
+
 def decrypt_file(
     source: Path, dest: Path | None = None, psk: str = DEFAULT_PSK
 ) -> Path:
-    """Decrypt ``source`` to ``dest``, defaulting to ``source`` with an ``.ini``
-    suffix.  Returns the path written."""
+    """Decrypt ``source`` to ``dest``, defaulting to :func:`default_ini_path`.
+    Returns the path written."""
     if dest is None:
-        dest = source.with_suffix(".ini")
+        dest = default_ini_path(source)
     dest.write_bytes(decrypt(source.read_bytes(), psk))
     return dest

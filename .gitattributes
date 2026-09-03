@@ -1,1 +1,6 @@
 * module-contact=hgv27681
+
+# Device captures compared byte for byte by tests/test_nport.py.
+# -text stops any checkout rewriting their CRLF line endings; -diff keeps
+# them out of diffs, where they are just noise.
+tests/data/** -text -diff
