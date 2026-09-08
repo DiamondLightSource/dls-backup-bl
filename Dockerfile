@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 
 # The runtime stage copies the built venv into a runtime container
-FROM ubuntu:noble AS runtime
+FROM ubuntu:resolute AS runtime
 
 # GitPython (used by repository.py) needs the git executable at runtime
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
